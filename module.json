@@ -1,0 +1,6 @@
+{
+    "type": "package",
+    "namespace": "pluginhandler_a",
+    "communicationProtocol": "node_ipc",
+    "autoRestart": true
+}
