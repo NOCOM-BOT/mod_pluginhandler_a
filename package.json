@@ -25,6 +25,7 @@
   "homepage": "https://github.com/NOCOM-BOT/mod_pluginhandler_a#readme",
   "devDependencies": {
     "@tsconfig/node18": "^1.0.1",
+    "@types/node": "^18.0.0",
     "typescript": "^4.7.4"
   }
 }
