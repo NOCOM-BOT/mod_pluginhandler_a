@@ -7,37 +7,76 @@ import path from "node:path";
 let cmc = new CMComm();
 
 let tempDirResp = await cmc.callAPI("core", "get_temp_folder", null);
-if (!tempDirResp.exist) 
+if (!tempDirResp.exist)
     throw new Error("Unsupported kernel version");
 
 let tempDir = tempDirResp.data;
 
 cmc.on("api:check_plugin", async (from: string, data: (
-    { filename: string, pathname: undefined } | 
+    { filename: string, pathname: undefined } |
     { pathname: string, filename: undefined }
 ), callback: (error: string | null, data?: any) => void) => {
     if (data.filename) {
+        try {
+            let zip = new AdmZip(data.filename);
+            let zipEntries = zip.getEntries();
+            if (zipEntries.length < 2) {
+                callback("Invalid content (missing files)", {
+                    compliant: false
+                });
+                return;
+            }
+            let zipEntry = zipEntries.find(x => x.entryName === "plugin.json");
+            if (!zipEntry) {
+                callback("plugin.json not found", {
+                    compliant: false
+                });
+                return;
+            }
 
+            try {
+                let pJSON = JSON.parse(zipEntry.getData().toString());
+                try {
+                    compliantTest_pJSON(pJSON);
+                } catch (e) {
+                    callback(String(e), {
+                        compliant: false
+                    });
+                }
+
+                callback(null, pJSON);
+            } catch {
+                callback("Invalid plugin.json", {
+                    compliant: false
+                });
+            }
+        } catch {
+            callback("Invalid ZIP file", {
+                compliant: false
+            });
+        }
     } else if (data.pathname) {
         // Test if plugin is spec-compliant
         try {
             let pJSON = JSON.parse(await fs.readFile(path.join(data.pathname, "plugin.json"), { encoding: "utf8" }));
-            
+
             try {
                 compliantTest_pJSON(pJSON);
             } catch (e) {
-                return callback(String(e), {
+                callback(String(e), {
                     compliant: false
                 });
+                return;
             }
 
-            return callback(null, {
+            callback(null, {
                 compliant: true,
                 pluginName: pJSON.pluginName,
                 namespace: pJSON.pluginNamespace,
                 version: pJSON.pluginVersion,
                 author: pJSON.author,
             });
+            return;
         } catch {
             callback("Invalid plugin.json", {
                 compatible: false
