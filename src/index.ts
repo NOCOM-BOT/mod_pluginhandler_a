@@ -1,8 +1,11 @@
 import CMComm from "./CMC";
+import Logger from "./Logger";
 
 import AdmZip from "adm-zip";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
+import { randomBytes } from "node:crypto";
 
 let cmc = new CMComm();
 
@@ -12,10 +15,12 @@ if (!tempDirResp.exist)
 
 let tempDir = tempDirResp.data;
 
-cmc.on("api:check_plugin", async (from: string, data: (
+let logger = new Logger(cmc);
+
+async function compliantTest(data: (
     { filename: string, pathname: undefined } |
     { pathname: string, filename: undefined }
-), callback: (error: string | null, data?: any) => void) => {
+), callback: (error: string | null, data?: any) => void) {
     if (data.filename) {
         try {
             let zip = new AdmZip(data.filename);
@@ -84,6 +89,70 @@ cmc.on("api:check_plugin", async (from: string, data: (
         }
     } else {
         callback("No filename or pathname provided", null);
+    }
+}
+
+cmc.on("api:check_plugin", (from: string, data: (
+    { filename: string, pathname: undefined } |
+    { pathname: string, filename: undefined }
+), callback: (error: string | null, data?: any) => void) => compliantTest(data, callback));
+
+cmc.on("api:load_plugin", async (from: string, data: (
+    { filename: string, pathname: undefined } |
+    { pathname: string, filename: undefined }
+), callback: (error: string | null, data?: any) => void) => {
+    interface LPData {
+        compliant: boolean,
+        error?: string,
+        pluginName?: string,
+        namespace?: string,
+        version?: string,
+        author?: string
+    }
+    let rpromise: (data: LPData) => void;
+    let promise = new Promise<LPData>((resolve) => rpromise = resolve);
+
+    compliantTest(data, (error, data) => {
+        if (error) {
+            rpromise({
+                ...data,
+                error
+            });
+        } else {
+            rpromise(data);
+        }
+    });
+
+    let ctData = await promise;
+    if (!ctData.compliant) {
+        callback(null, {
+            loaded: false,
+            error: ctData.error ?? null
+        });
+        return;
+    } else {
+        try {
+            logger.info("phandler_A", "Loading plugin", ctData.pluginName, "v" + ctData.version, "by", ctData.author, "(namespace " + ctData.namespace + ")");
+
+            let moduleTempPath = path.join(tempDir, ctData.namespace + "-" + randomBytes(24).toString("hex"));
+            if (data.filename) {
+                let zip = new AdmZip(data.filename);
+                // Extract ZIP to a temporary directory.
+                await promisify(zip.extractAllToAsync)(moduleTempPath, true, false);
+            } else if (data.pathname) {
+                await fs.cp(data.pathname, moduleTempPath, {
+                    recursive: true
+                });
+            }
+
+            
+        } catch (e) {
+            callback(null, {
+                loaded: false,
+                error: String(e)
+            });
+            return;
+        }
     }
 });
 
