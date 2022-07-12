@@ -1,5 +1,6 @@
 import CMComm from "./CMC";
 import Logger from "./Logger";
+import Plugin from "./Plugin";
 
 import AdmZip from "adm-zip";
 import fs from "node:fs/promises";
@@ -7,6 +8,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { randomBytes } from "node:crypto";
 
+let pList: { [namespace: string]: Plugin } = {};
 let cmc = new CMComm();
 
 let tempDirResp = await cmc.callAPI("core", "get_temp_folder", null);
@@ -145,7 +147,8 @@ cmc.on("api:load_plugin", async (from: string, data: (
                 });
             }
 
-            
+            let plugin = new Plugin(moduleTempPath, cmc);
+
         } catch (e) {
             callback(null, {
                 loaded: false,
