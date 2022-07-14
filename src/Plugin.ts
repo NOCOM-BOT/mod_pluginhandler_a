@@ -23,7 +23,7 @@ export default class Plugin {
         if (this.started) {
             return;
         }
-        
+
         // Read plugin.json
         let pJSON: {
             formatVersion: number,
@@ -66,7 +66,11 @@ export default class Plugin {
                 stdio: ["ignore", "ignore", "ignore", 'ipc']
             });
 
-            await this.handleChild();
+            try {
+                await this.handleChild();
+            } catch (e) {
+
+            }
         } else if (pJSON.subclass === 1) {
             throw new Error("Subclass 1 is not supported yet.");
         } else {
@@ -75,6 +79,24 @@ export default class Plugin {
     }
 
     async handleChild() {
+        if (this.child) {
+            let res: () => void, rej: (e: any) => void, promise = new Promise<void>((resolve, reject) => {
+                res = resolve; rej = reject;
+                setTimeout(() => reject(new Error("Timeout")), 30000);
+            });
 
+            this.child.on("message", (message: any) => {
+                switch (message.op) {
+                    case "verifyPlugin":
+                        if (!message.allow) {
+                            this.child?.kill();
+                            this.child = undefined;
+                            rej(new Error("Plugin is not allowed to run."));
+                        }
+                        res();
+                        break;
+                }
+            });
+        }
     }
 }
