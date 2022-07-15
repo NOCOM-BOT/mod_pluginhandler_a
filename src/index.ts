@@ -33,27 +33,34 @@ async function compliantTest(data: (
                 });
                 return;
             }
-            let zipEntry = zipEntries.find(x => x.entryName === "plugin.json");
+            let zipEntry = zipEntries.find(x => x.entryName === "package.json");
             if (!zipEntry) {
-                callback("plugin.json not found", {
+                callback("package.json not found", {
                     compliant: false
                 });
                 return;
             }
 
             try {
-                let pJSON = JSON.parse(zipEntry.getData().toString());
-                try {
-                    compliantTest_pJSON(pJSON);
-                } catch (e) {
-                    callback(String(e), {
+                let pJSONBase = JSON.parse(zipEntry.getData().toString());
+                if (pJSONBase.NOCOM_AType_Metadata) {
+                    let pJSON = pJSONBase.NOCOM_AType_Metadata;
+                    try {
+                        compliantTest_pJSON(pJSON);
+                    } catch (e) {
+                        callback(String(e), {
+                            compliant: false
+                        });
+                    }
+
+                    callback(null, pJSON);
+                } else {
+                    callback("Invalid content (missing metadata)", {
                         compliant: false
                     });
                 }
-
-                callback(null, pJSON);
             } catch {
-                callback("Invalid plugin.json", {
+                callback("Invalid package.json", {
                     compliant: false
                 });
             }
