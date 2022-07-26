@@ -1,6 +1,6 @@
-import CMComm from "./CMC";
-import Logger from "./Logger";
-import Plugin from "./Plugin";
+import CMComm from "./CMC.js";
+import Logger from "./Logger.js";
+import Plugin from "./Plugin.js";
 
 import AdmZip from "adm-zip";
 import fs from "node:fs/promises";
@@ -154,9 +154,12 @@ cmc.on("api:load_plugin", async (from: string, data: (
                 });
             }
 
-            let plugin = new Plugin(moduleTempPath, cmc);
+            let plugin = new Plugin(moduleTempPath, cmc, logger);
+            await plugin.start();
 
+            pList[ctData.namespace ?? "???"] = plugin;
         } catch (e) {
+            logger.error("phandler_A", "Error while starting plugin", ctData.pluginName, "v" + ctData.version, "by", ctData.author, "(namespace " + ctData.namespace + "):", String(e));
             callback(null, {
                 loaded: false,
                 error: String(e)
@@ -165,6 +168,53 @@ cmc.on("api:load_plugin", async (from: string, data: (
         }
     }
 });
+
+cmc.on("api:unload_plugin", async (from: string, data: {
+    namespace: string
+}, callback: (error: string | null, data?: any) => void) => {
+    if (!pList[data.namespace]) {
+        callback("Plugin not loaded", {
+            error: "Plugin not loaded"
+        });
+        return;
+    }
+
+    try {
+        logger.info("phandler_A", "Unloading plugin", data.namespace);
+        await pList[data.namespace].stop();
+    } catch (e) {
+        pList[data.namespace].forceStop();
+    }
+
+    delete pList[data.namespace];
+
+    callback(null, {});
+});
+
+cmc.on("api:plugin_call", async (from: string, data: {
+    namespace: string,
+    funcName: string,
+    args: any[]
+}, callback: (error: string | null, data?: any) => void) => {
+    if (!pList[data.namespace]) {
+        callback("Plugin not loaded", {
+            error: "Plugin not loaded"
+        });
+        return;
+    }
+
+    try {
+        let res = await pList[data.namespace].call(data.funcName, data.args);
+        callback(null, {
+            returnData: res
+        });
+    } catch (e) {
+        callback(String(e), {
+            error: String(e),
+            returnData: null
+        });
+    }
+})
 
 function compliantTest_pJSON(pJSON: any) {
     if (pJSON.formatVersion !== 0) throw new Error("Invalid format version");

@@ -19,8 +19,10 @@ export async function callFuncPlugin(namespace, funcName, ...args) {
         nonce
     });
 
-    let rtData = await new Promise(resolve => {
-        apiCB[nonce] = resolve;
+    let rtData = await new Promise((resolve, reject) => {
+        apiCB[nonce] = {
+            resolve, reject
+        };
     });
 
     if (rtData.error) {
@@ -64,17 +66,24 @@ export async function callAPI(moduleID, cmd, value) {
 export async function registerCommand(commandName, commandDescAPI, commandCallback, compatibility) {
     let nonce = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
+    let randomFuncNameCallback = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    let randomFuncNameDescAPI = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    functionRef[randomFuncNameCallback] = commandCallback;
+    functionRef[randomFuncNameDescAPI] = commandDescAPI;
+
     process.send({
         op: "registerCommand",
         compatibility,
-        commandName,
-        commandDescAPI,
-        commandCallback,
+        funcName: randomFuncNameCallback,
+        funcDescAPI: randomFuncNameDescAPI,
+        compatibility,
         nonce
     });
 
-    let rtData = await new Promise(resolve => {
-        apiCB[nonce] = resolve;
+    let rtData = await new Promise((resolve, reject) => {
+        apiCB[nonce] = {
+            resolve, reject
+        };
     });
 
     return rtData.success;
@@ -84,7 +93,7 @@ export async function registerCommandFuncPlugin(commandName, funcDescAPI, funcNa
     let nonce = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
     process.send({
-        op: "registerCommandFuncPlugin",
+        op: "registerCommand",
         compatibility,
         commandName,
         funcDescAPI,
@@ -92,8 +101,10 @@ export async function registerCommandFuncPlugin(commandName, funcDescAPI, funcNa
         nonce
     });
 
-    let rtData = await new Promise(resolve => {
-        apiCB[nonce] = resolve;
+    let rtData = await new Promise((resolve, reject) => {
+        apiCB[nonce] = {
+            resolve, reject
+        };
     });
 
     return rtData.success;
@@ -114,11 +125,14 @@ export function waitForModule(moduleNamespace, timeout) {
 
     process.send({
         op: "waitForModule",
-        moduleNamespace
+        moduleNamespace,
+        timeout
     });
 
-    let rtData = await new Promise(resolve => {
-        apiCB[nonce] = resolve;
+    let rtData = await new Promise((resolve, reject) => {
+        apiCB[nonce] = {
+            resolve, reject
+        };
     });
 
     return rtData.success;
@@ -143,6 +157,37 @@ export const log = {
 
 process.on("message", (msg) => {
     if (msg.op = "cb") {
-        apiCB[msg.nonce]?.(msg.data);
+        if (msg.error) {
+            apiCB[msg.nonce]?.reject?.(msg.error);
+        } else {
+            apiCB[msg.nonce]?.resolve?.(msg.data);
+        }
+    }
+
+    if (msg.op == "api_call") {
+        let func = functionRef[msg.funcName];
+        if (func) {
+            try {
+                let d = await func(...msg.args);
+
+                process.send({
+                    op: "cb",
+                    nonce: msg.nonce,
+                    data: d
+                });
+            } catch (e) {
+                process.send({
+                    op: "cb",
+                    nonce: msg.nonce,
+                    error: e instanceof Error ? e.stack : String(e)
+                });
+            }
+        } else {
+            process.send({
+                op: "cb",
+                nonce: msg.nonce,
+                error: `Function ${msg.funcName} not found`
+            });
+        }
     }
 });
