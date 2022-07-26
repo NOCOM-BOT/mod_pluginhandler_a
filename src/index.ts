@@ -20,9 +20,21 @@ let tempDir = tempDirResp.data;
 let logger = new Logger(cmc);
 
 async function compliantTest(data: (
-    { filename: string, pathname: undefined } |
-    { pathname: string, filename: undefined }
-), callback: (error: string | null, data?: any) => void) {
+    { filename: string, pathname?: null } |
+    { pathname: string, filename?: null }
+), cb?: (error: string | null, data?: any) => void) {
+    let callback: (error: string | null, data?: any) => void = (error: string | null, data?: any) => {};
+    let promise = new Promise<any>((resolve, reject) => {
+        callback = (error: string | null, data?: any) => {
+            if (error)
+                reject(error);
+            else
+                resolve(data);
+
+            cb?.(error, data);
+        }
+    });
+
     if (data.filename) {
         try {
             let zip = new AdmZip(data.filename);
@@ -53,7 +65,13 @@ async function compliantTest(data: (
                         });
                     }
 
-                    callback(null, pJSON);
+                    callback(null, {
+                        compliant: true,
+                        pluginName: pJSON.pluginName,
+                        namespace: pJSON.pluginNamespace,
+                        version: pJSON.pluginVersion,
+                        author: pJSON.author,
+                    });
                 } else {
                     callback("Invalid content (missing metadata)", {
                         compliant: false
@@ -99,6 +117,8 @@ async function compliantTest(data: (
     } else {
         callback("No filename or pathname provided", null);
     }
+
+    return promise;
 }
 
 cmc.on("api:check_plugin", (from: string, data: (
@@ -214,7 +234,54 @@ cmc.on("api:plugin_call", async (from: string, data: {
             returnData: null
         });
     }
-})
+});
+
+cmc.on("api:plugin_search", async (from: string, data: {
+    pathname: string
+}, callback: (error: string | null, data?: any) => void) => {
+    // Search for .zip files and subdirectory in the given path
+    let files = await fs.readdir(data.pathname, {
+        withFileTypes: true,
+        encoding: "utf8"
+    });
+    let zipFiles: string[] = [];
+    let subdirectories: string[] = [];
+    for (let file of files) {
+        if (file.name.endsWith(".zip") && file.isFile()) {
+            zipFiles.push(path.join(data.pathname, file.name));
+        } else if (file.isDirectory()) {
+            subdirectories.push(path.join(data.pathname, file.name));
+        }
+    }
+
+    // Do a compliance test on each ZIP file and each subdirectory
+    let compliant: string[] = [];
+    // Test for ZIP files first
+    for (let zipFile of zipFiles) {
+        try {
+            await compliantTest({
+                filename: zipFile
+            });
+            
+            compliant.push(zipFile);
+        } catch {}
+    }
+
+    // Test for subdirectories
+    for (let subdirectory of subdirectories) {
+        try {
+            await compliantTest({
+                pathname: subdirectory
+            });
+            
+            compliant.push(subdirectory);
+        } catch {}
+    }
+
+    callback(null, {
+        valid: compliant
+    });
+});
 
 function compliantTest_pJSON(pJSON: any) {
     if (pJSON.formatVersion !== 0) throw new Error("Invalid format version");
