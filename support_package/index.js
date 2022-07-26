@@ -76,7 +76,7 @@ export async function registerCommand(commandName, commandDescAPI, commandCallba
         compatibility,
         funcName: randomFuncNameCallback,
         funcDescAPI: randomFuncNameDescAPI,
-        compatibility,
+        commandName,
         nonce
     });
 
@@ -120,7 +120,7 @@ export function exit(exit_code, exit_reason) {
     process.exit(exit_code);
 }
 
-export function waitForModule(moduleNamespace, timeout) {
+export async function waitForModule(moduleNamespace, timeout) {
     let nonce = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
     process.send({
@@ -138,7 +138,7 @@ export function waitForModule(moduleNamespace, timeout) {
     return rtData.success;
 }
 
-function log(level, ...args) {
+function logger(level, ...args) {
     process.send({
         op: "log",
         level,
@@ -147,15 +147,15 @@ function log(level, ...args) {
 }
 
 export const log = {
-    critical: (...args) => log("critical", ...args),
-    error: (...args) => log("error", ...args),
-    warn: (...args) => log("warn", ...args),
-    info: (...args) => log("info", ...args),
-    debug: (...args) => log("debug", ...args),
-    verbose: (...args) => log("verbose", ...args)
+    critical: (...args) => logger("critical", ...args),
+    error: (...args) => logger("error", ...args),
+    warn: (...args) => logger("warn", ...args),
+    info: (...args) => logger("info", ...args),
+    debug: (...args) => logger("debug", ...args),
+    verbose: (...args) => logger("verbose", ...args)
 }
 
-process.on("message", (msg) => {
+process.on("message", async (msg) => {
     if (msg.op = "cb") {
         if (msg.error) {
             apiCB[msg.nonce]?.reject?.(msg.error);

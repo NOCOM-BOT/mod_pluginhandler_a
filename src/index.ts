@@ -90,7 +90,8 @@ async function compliantTest(data: (
     } else if (data.pathname) {
         // Test if plugin is spec-compliant
         try {
-            let pJSON = JSON.parse(await fs.readFile(path.join(data.pathname, "plugin.json"), { encoding: "utf8" }));
+            let pJSONBase = JSON.parse(await fs.readFile(path.join(data.pathname, "package.json"), { encoding: "utf8" }));
+            let pJSON = pJSONBase.NOCOM_AType_Metadata;
 
             try {
                 compliantTest_pJSON(pJSON);
@@ -110,7 +111,7 @@ async function compliantTest(data: (
             });
             return;
         } catch {
-            callback("Invalid plugin.json", {
+            callback("Invalid package.json", {
                 compatible: false
             });
         }
@@ -178,6 +179,14 @@ cmc.on("api:load_plugin", async (from: string, data: (
             await plugin.start();
 
             pList[ctData.namespace ?? "???"] = plugin;
+
+            callback(null, {
+                loaded: true,
+                pluginName: ctData.pluginName,
+                namespace: ctData.namespace,
+                version: ctData.version,
+                author: ctData.author
+            });
         } catch (e) {
             logger.error("phandler_A", "Error while starting plugin", ctData.pluginName, "v" + ctData.version, "by", ctData.author, "(namespace " + ctData.namespace + "):", String(e));
             callback(null, {
@@ -291,10 +300,10 @@ function compliantTest_pJSON(pJSON: any) {
     if (typeof pJSON.pluginNamespace !== "string") throw new Error("Plugin must have namespace");
     if (typeof pJSON.entryPoint !== "string") throw new Error("Plugin must have entry point");
     if (pJSON.subclass === 0) {
-        if (pJSON.entrypoint.endsWith(".cjs")) {
+        if (pJSON.entryPoint.endsWith(".cjs")) {
             throw new Error("CommonJS is not supported. If you want to use CommonJS, you must have ESM module as entry point then bootstrap to CJS.");
         }
-        if (!pJSON.entrypoint.endsWith(".js") && !pJSON.entrypoint.endsWith(".mjs")) {
+        if (!pJSON.entryPoint.endsWith(".js") && !pJSON.entrypoint.endsWith(".mjs")) {
             throw new Error("Entry point must be an (ESM module) JavaScript file");
         }
     }

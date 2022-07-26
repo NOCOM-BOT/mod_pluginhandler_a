@@ -1,10 +1,11 @@
 import { fork } from 'node:child_process';
 import type { ChildProcess } from "node:child_process";
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import path from "node:path";
 import type CMComm from "./CMC.js";
 import type Logger from "./Logger.js";
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import crypto from "node:crypto";
 
 const __filename = fileURLToPath(import.meta.url)
@@ -48,28 +49,25 @@ export default class Plugin {
             return;
         }
 
-        // Read plugin.json
+        // Read package.json
+        let pJSONBase: any;
         let pJSON: PJSON;
         try {
-            pJSON = JSON.parse(await fs.readFile(path.join(this.path, "plugin.json"), { encoding: "utf8" }));
+            pJSONBase = JSON.parse(await fs.readFile(path.join(this.path, "package.json"), { encoding: "utf8" }));
+            pJSON = pJSONBase.NOCOM_AType_Metadata;
         } catch (e) {
-            throw new Error("Invalid plugin.json");
+            throw new Error("Invalid metadata");
         }
 
         if (pJSON.formatVersion !== 0) {
-            throw new Error("Invalid plugin.json");
+            throw new Error("Invalid metadata");
         }
 
         if (!pJSON.entryPoint) {
-            throw new Error("Invalid plugin.json");
+            throw new Error("Invalid metadata");
         }
 
         this.pJSON = pJSON;
-
-        // Package download
-        await this.cmc.callAPI("core", "pnpm_install", {
-            path: this.path
-        });
 
         // Add support package
         await this.cmc.callAPI("core", "pnpm_install_specific", {
@@ -77,10 +75,32 @@ export default class Plugin {
             dep: path.join(__dirname, "..", "support_package")
         });
 
+        // Package download
+        await this.cmc.callAPI("core", "pnpm_install", {
+            path: this.path
+        });
+
         if (pJSON.subclass === 0) {
-            this.child = fork(path.join(this.path, pJSON.entryPoint), {
-                cwd: this.path,
-                stdio: ["ignore", "ignore", "ignore", 'ipc']
+            // PNPM handle things kinda slowly and weirdly, so we need to check if support package
+            // is installed first
+            // THIS THING TOOK ME 3 HOURS TO FIGURE OUT
+            let supportPackagePath = path.join(this.path, "node_modules", "@nocom_bot", "nocom-atype-support");
+            for (;;) {
+                // Check for support package every 100ms
+                await new Promise(resolve => setTimeout(resolve, 100));
+                try {
+                    // Test import index.js
+                    await import(pathToFileURL(path.join(supportPackagePath, "index.js")).toString());
+                    // Test package.json
+                    JSON.parse(await fs.readFile(path.join(supportPackagePath, "package.json"), { encoding: "utf8" }));
+                    break;
+                } catch {}
+            }
+
+            this.child = fork(path.join(this.path, pJSON.entryPoint), [], {
+                cwd: path.join(this.path),
+                silent: false
+                //stdio: ["ignore", "ignore", "ignore", 'ipc']
             });
 
             try {
@@ -92,7 +112,7 @@ export default class Plugin {
         } else if (pJSON.subclass === 1) {
             throw new Error("Subclass 1 is not supported yet.");
         } else {
-            throw new Error("Invalid plugin.json");
+            throw new Error("Invalid metadata");
         }
     }
 
@@ -120,7 +140,7 @@ export default class Plugin {
         }
 
         let nonce = crypto.randomBytes(16).toString("hex");
-        let resolve = (value: any) => {}, reject = (error: any) => { },
+        let resolve = (value: any) => { }, reject = (error: any) => { },
             promise = new Promise<any>((r, j) => {
                 resolve = r;
                 reject = j;
@@ -158,9 +178,10 @@ export default class Plugin {
                         if (!message.allow) {
                             this.child?.kill();
                             this.child = undefined;
-                            rej(new Error("Plugin is not allowed to run."));
+                            rej(new Error("DRM triggered"));
+                        } else {
+                            res();
                         }
-                        res();
                         break;
 
                     case "callFuncPlugin":
@@ -207,7 +228,7 @@ export default class Plugin {
                             });
                         }
                         break;
-                    
+
                     case "callAPI":
                         let req3 = await this.cmc.callAPI(message.moduleID, message.cmd, message.value);
                         if (req3.exist) {
@@ -290,10 +311,10 @@ export default class Plugin {
                             });
                         }
                         break;
-                    
+
                     case "exit":
                         await this.cmc.callAPI("core", "unregister_plugin", {
-                            namespace: this.pJSON?.pluginNamespace    
+                            namespace: this.pJSON?.pluginNamespace
                         });
                         break;
 
