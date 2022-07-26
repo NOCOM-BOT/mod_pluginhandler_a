@@ -153,7 +153,7 @@ export default class Plugin {
 
         this.child.send({
             op: "api_call",
-            func: funcName,
+            funcName,
             args,
             nonce
         });
