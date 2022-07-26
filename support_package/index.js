@@ -156,7 +156,7 @@ export const log = {
 }
 
 process.on("message", async (msg) => {
-    if (msg.op = "cb") {
+    if (msg.op === "cb") {
         if (msg.error) {
             apiCB[msg.nonce]?.reject?.(msg.error);
         } else {
@@ -164,7 +164,7 @@ process.on("message", async (msg) => {
         }
     }
 
-    if (msg.op == "api_call") {
+    if (msg.op === "api_call") {
         let func = functionRef[msg.funcName];
         if (func) {
             try {
