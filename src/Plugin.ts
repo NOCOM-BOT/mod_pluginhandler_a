@@ -363,6 +363,7 @@ export default class Plugin {
             });
 
             await promise;
+            this.started = true;
         }
     }
 }
