@@ -23,7 +23,7 @@ async function compliantTest(data: (
     { filename: string, pathname?: null } |
     { pathname: string, filename?: null }
 ), cb?: (error: string | null, data?: any) => void) {
-    let callback: (error: string | null, data?: any) => void = (error: string | null, data?: any) => {};
+    let callback: (error: string | null, data?: any) => void = (error: string | null, data?: any) => { };
     let promise = new Promise<any>((resolve, reject) => {
         callback = (error: string | null, data?: any) => {
             if (error)
@@ -180,13 +180,33 @@ cmc.on("api:load_plugin", async (from: string, data: (
 
             pList[ctData.namespace ?? "???"] = plugin;
 
-            callback(null, {
-                loaded: true,
+            // Register namespace
+            let rq = await cmc.callAPI("core", "register_plugin", {
                 pluginName: ctData.pluginName,
                 namespace: ctData.namespace,
                 version: ctData.version,
                 author: ctData.author
             });
+
+            if (rq.exist && !rq.data?.conflict) {
+                callback(null, {
+                    loaded: true,
+                    pluginName: ctData.pluginName,
+                    namespace: ctData.namespace,
+                    version: ctData.version,
+                    author: ctData.author
+                });
+            } else {
+                // Namespace already registered, unload and throw error.
+                await plugin.stop();
+                await fs.rmdir(moduleTempPath, { recursive: true });
+                delete pList[ctData.namespace ?? "???"]
+
+                callback("Namespace already registered (conflict detected)", {
+                    loaded: false,
+                    error: "Conflict namespace"
+                });
+            }
         } catch (e) {
             logger.error("phandler_A", "Error while starting plugin", ctData.pluginName, "v" + ctData.version, "by", ctData.author, "(namespace " + ctData.namespace + "):", String(e));
             callback(null, {
@@ -216,6 +236,11 @@ cmc.on("api:unload_plugin", async (from: string, data: {
     }
 
     delete pList[data.namespace];
+
+    // Unregister namespace
+    await cmc.callAPI("core", "unregister_plugin", {
+        namespace: data.namespace
+    });
 
     callback(null, {});
 });
@@ -271,9 +296,9 @@ cmc.on("api:plugin_search", async (from: string, data: {
             await compliantTest({
                 filename: zipFile
             });
-            
+
             compliant.push(zipFile);
-        } catch {}
+        } catch { }
     }
 
     // Test for subdirectories
@@ -282,9 +307,9 @@ cmc.on("api:plugin_search", async (from: string, data: {
             await compliantTest({
                 pathname: subdirectory
             });
-            
+
             compliant.push(subdirectory);
-        } catch {}
+        } catch { }
     }
 
     callback(null, {
