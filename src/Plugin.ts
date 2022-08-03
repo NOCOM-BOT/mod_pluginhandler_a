@@ -8,8 +8,11 @@ import type Logger from "./Logger.js";
 import { fileURLToPath, pathToFileURL } from 'url';
 import crypto from "node:crypto";
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const SUPPORT_PACKAGE_LOCATION = path.resolve(__dirname, "..", "support_package");
+const TSNODE_BIN_LOCATION = path.resolve(__dirname, "..", "node_modules", "ts-node", "dist", "bin-esm.js");
 
 interface PJSON {
     formatVersion: number,
@@ -67,52 +70,63 @@ export default class Plugin {
             throw new Error("Invalid metadata");
         }
 
+        // Test for subclass first!
+        if (pJSON.subclass !== 0 && pJSON.subclass !== 1) {
+            throw new Error("Invalid metadata");
+        }
+
         this.pJSON = pJSON;
 
         // Add support package
-        await this.cmc.callAPI("core", "pnpm_install_specific", {
-            path: this.path,
-            dep: path.join(__dirname, "..", "support_package")
-        });
+        // PNPM handle things kinda slowly and weirdly, so we need to check if support package
+        // is installed first
+        // THIS THING TOOK ME 3+ HOURS TO FIGURE OUT
+        let supportPackagePath = path.join(this.path, "node_modules", "@nocom_bot", "nocom-atype-support");
+        let loadAttempt = 20;
+        for (; ;) {
+            if (loadAttempt >= 20) {
+                await this.cmc.callAPI("core", "pnpm_install_specific", {
+                    path: this.path,
+                    dep: SUPPORT_PACKAGE_LOCATION
+                });
+                loadAttempt = 0;
+            }
 
+            // Check for support package every 100ms
+            await new Promise(resolve => setTimeout(resolve, 100));
+            try {
+                // Test import index.js
+                await import(pathToFileURL(path.join(supportPackagePath, "index.js")).toString());
+                // Test package.json
+                JSON.parse(await fs.readFile(path.join(supportPackagePath, "package.json"), { encoding: "utf8" }));
+                break;
+            } catch { 
+                loadAttempt++;
+            }
+        }
+        
         // Package download
         await this.cmc.callAPI("core", "pnpm_install", {
             path: this.path
         });
 
         if (pJSON.subclass === 0) {
-            // PNPM handle things kinda slowly and weirdly, so we need to check if support package
-            // is installed first
-            // THIS THING TOOK ME 3 HOURS TO FIGURE OUT
-            let supportPackagePath = path.join(this.path, "node_modules", "@nocom_bot", "nocom-atype-support");
-            for (;;) {
-                // Check for support package every 100ms
-                await new Promise(resolve => setTimeout(resolve, 100));
-                try {
-                    // Test import index.js
-                    await import(pathToFileURL(path.join(supportPackagePath, "index.js")).toString());
-                    // Test package.json
-                    JSON.parse(await fs.readFile(path.join(supportPackagePath, "package.json"), { encoding: "utf8" }));
-                    break;
-                } catch {}
-            }
-
             this.child = fork(path.join(this.path, pJSON.entryPoint), [], {
-                cwd: path.join(this.path),
+                cwd: path.resolve(this.path),
                 silent: false
-                //stdio: ["ignore", "ignore", "ignore", 'ipc']
             });
-
-            try {
-                await this.handleChild();
-            } catch (e) {
-                this.child.kill();
-                throw e;
-            }
         } else if (pJSON.subclass === 1) {
-            throw new Error("Subclass 1 is not supported yet.");
-        } else {
-            throw new Error("Invalid metadata");
+            this.child = fork(TSNODE_BIN_LOCATION, [path.join(this.path, pJSON.entryPoint)], {
+                cwd: path.resolve(this.path),
+                silent: false
+            });
+        }
+
+        try {
+            await this.handleChild();
+        } catch (e) {
+            this.child?.kill();
+            throw e;
         }
     }
 
