@@ -63,19 +63,17 @@ export async function callAPI(moduleID, cmd, value) {
     return rtData.data;
 }
 
-export async function registerCommand(commandName, commandDescAPI, commandCallback, compatibility) {
+export async function registerCommand(commandName, commandInfo, commandCallback, compatibility) {
     let nonce = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
     let randomFuncNameCallback = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-    let randomFuncNameDescAPI = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
     functionRef[randomFuncNameCallback] = commandCallback;
-    functionRef[randomFuncNameDescAPI] = commandDescAPI;
 
     process.send({
         op: "registerCommand",
         compatibility,
         funcName: randomFuncNameCallback,
-        funcDescAPI: randomFuncNameDescAPI,
+        commandInfo,
         commandName,
         nonce
     });
@@ -89,15 +87,15 @@ export async function registerCommand(commandName, commandDescAPI, commandCallba
     return rtData.success;
 }
 
-export async function registerCommandFuncPlugin(commandName, funcDescAPI, funcName, compatibility) {
+export async function registerCommandFuncPlugin(commandName, commandInfo, funcName, compatibility) {
     let nonce = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
     process.send({
         op: "registerCommand",
         compatibility,
-        commandName,
-        funcDescAPI,
         funcName,
+        commandInfo,
+        commandName,
         nonce
     });
 

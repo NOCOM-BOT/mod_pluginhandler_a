@@ -291,7 +291,10 @@ export default class Plugin {
                                         namespace: this.pJSON?.pluginNamespace,
                                         command: message.commandName,
                                         funcName: message.funcName,
-                                        funcDescAPI: message.funcDescAPI
+                                        description: message.commandInfo?.description ?? { fallback: "" },
+                                        args: message.commandInfo?.args ?? { fallback: "" },
+                                        argsName: message.commandInfo?.argsName ?? { fallback: "" },
+                                        compatibility: message.compatibility ?? [],
                                     });
 
                                     if (req5.exist) {
