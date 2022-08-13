@@ -282,7 +282,7 @@ export default class Plugin {
                                             timeout: 10000
                                         });
 
-                                        if (!reqTO) {
+                                        if (!reqTO.exist || (reqTO.exist && !reqTO.data)) {
                                             continue;
                                         }
                                     }
