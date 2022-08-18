@@ -144,6 +144,34 @@ function logger(level, ...args) {
     });
 }
 
+export function database(databaseID) {
+    function q(t, a1, a2, a3) {
+        let nonce = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+
+        process.send({
+            op: "database",
+            t,
+            a1,
+            a2,
+            a3,
+            databaseID
+        });
+
+        return new Promise((resolve, reject) => {
+            apiCB[nonce] = {
+                resolve, reject
+            };
+        });
+    }
+
+    return {
+        get: (table, key) => q("get", table, key),
+        set: (table, key, value) => q("set", table, key, value),
+        delete: (table, key) => q("delete", table, key),
+        deleteTable: (table) => q("deleteTable", table)
+    }
+}
+
 export const log = {
     critical: (...args) => logger("critical", ...args),
     error: (...args) => logger("error", ...args),

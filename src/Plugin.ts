@@ -376,6 +376,112 @@ export default class Plugin {
                             delete this.apiCBTable[message.nonce];
                         }
                         break;
+                    
+                    case "database":
+                        // Get database resolver for the corresponding database ID
+                        let req7 = await this.cmc.callAPI("core", "get_db_resolver", {
+                            databaseID: message.databaseID
+                        });
+                        if (req7.exist) {
+                            if (!req7.error) {
+                                let resolverID = req7.data.resolver;
+
+                                switch (message.t) {
+                                    case "get":
+                                        let req8 = await this.cmc.callAPI(resolverID, "get_data", {
+                                            databaseID: message.databaseID,
+                                            table: message.a1,
+                                            key: message.a2
+                                        });
+                                        if (req8.exist) {
+                                            this.child?.send({
+                                                op: "cb",
+                                                nonce: message.nonce,
+                                                data: req8.data
+                                            });
+                                        } else {
+                                            this.child?.send({
+                                                op: "cb",
+                                                nonce: message.nonce,
+                                                error: "Database not found"
+                                            });
+                                        }
+                                        break;
+                                    case "set":
+                                        let req9 = await this.cmc.callAPI(resolverID, "set_data", {
+                                            databaseID: message.databaseID,
+                                            table: message.a1,
+                                            key: message.a2,
+                                            value: message.a3
+                                        });
+                                        if (req9.exist) {
+                                            this.child?.send({
+                                                op: "cb",
+                                                nonce: message.nonce,
+                                                data: true
+                                            });
+                                        } else {
+                                            this.child?.send({
+                                                op: "cb",
+                                                nonce: message.nonce,
+                                                data: false
+                                            });
+                                        }
+                                        break;
+                                    case "delete":
+                                        let req10 = await this.cmc.callAPI(resolverID, "delete_data", {
+                                            databaseID: message.databaseID,
+                                            table: message.a1,
+                                            key: message.a2
+                                        });
+                                        if (req10.exist) {
+                                            this.child?.send({
+                                                op: "cb",
+                                                nonce: message.nonce,
+                                                data: true
+                                            });
+                                        } else {
+                                            this.child?.send({
+                                                op: "cb",
+                                                nonce: message.nonce,
+                                                data: false
+                                            });
+                                        }
+                                        break;
+                                    case "deleteTable":
+                                        let req11 = await this.cmc.callAPI(resolverID, "delete_table", {
+                                            databaseID: message.databaseID,
+                                            table: message.a1
+                                        });
+                                        if (req11.exist) {
+                                            this.child?.send({
+                                                op: "cb",
+                                                nonce: message.nonce,
+                                                data: true
+                                            });
+                                        } else {
+                                            this.child?.send({
+                                                op: "cb",
+                                                nonce: message.nonce,
+                                                data: false
+                                            });
+                                        }
+                                        break;
+                                }
+                            } else {
+                                this.child?.send({
+                                    op: "cb",
+                                    nonce: message.nonce,
+                                    error: req7.error
+                                });
+                            }
+                        } else {
+                            this.child?.send({
+                                op: "cb",
+                                nonce: message.nonce,
+                                error: "Incompatible core/kernel (???)"
+                            });
+                        }
                 }
             });
 
