@@ -62,7 +62,7 @@ export default class Plugin {
             throw new Error("Invalid metadata");
         }
 
-        if (pJSON.formatVersion !== 0) {
+        if (pJSON.formatVersion !== 1) {
             throw new Error("Invalid metadata");
         }
 

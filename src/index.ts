@@ -318,7 +318,7 @@ cmc.on("api:plugin_search", async (from: string, data: {
 });
 
 function compliantTest_pJSON(pJSON: any) {
-    if (pJSON.formatVersion !== 0) throw new Error("Invalid format version");
+    if (pJSON.formatVersion !== 1) throw new Error("Invalid format version");
     if (typeof pJSON.author !== "string") throw new Error("Plugin must have author");
     if (typeof pJSON.pluginVersion !== "string") throw new Error("Plugin must have version");
     if (typeof pJSON.pluginName !== "string") throw new Error("Plugin must have name");
