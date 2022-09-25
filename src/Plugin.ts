@@ -533,7 +533,7 @@ export default class Plugin {
                                     let lengthBytes = Array.from(lengthBuffer);
                                     
                                     this.child?.stdin?.write(
-                                        Buffer.from([...magicHeader, ...lengthBytes, ...encoded])
+                                        Buffer.from([...magicHeader, ...lengthBytes, ...encoded, 0x00])
                                     );
                                 });
 

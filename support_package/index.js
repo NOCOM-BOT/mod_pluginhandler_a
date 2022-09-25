@@ -13,7 +13,8 @@ let sendData = process?.send ?? ((data) => {
     process.stderr.write(Buffer.from([
         ...MAGIC_HEADER,
         ...lenBytes,
-        ...buf
+        ...buf,
+        0x00
     ]));
 });
 
@@ -248,8 +249,6 @@ let lastMessageLength = -1;
 
 let isReading = false;
 process.stdin.on("data", (dataUnk) => {
-    if (this.child?.killed) return;
-
     let data = Buffer.from(dataUnk);
     // Iterate through the data and check for magic header
 
