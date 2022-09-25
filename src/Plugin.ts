@@ -41,6 +41,8 @@ export default class Plugin {
 
     pJSON?: PJSON;
 
+    ipcSend?: (data: any) => void;
+
     constructor(path: string, cmc: CMComm, logger: Logger) {
         this.path = path;
         this.cmc = cmc;
@@ -165,7 +167,7 @@ export default class Plugin {
             reject
         };
 
-        this.child.send({
+        this.ipcSend?.({
             op: "api_call",
             funcName,
             args,
@@ -484,7 +486,12 @@ export default class Plugin {
                         }
                 }
             };
-            this.child.on("message", m => handleMessage(m, this.child?.send));
+            this.child.on("message", m => {
+                if (!this.ipcSend && this.child) {
+                    this.ipcSend = this.child.send.bind(this.child);
+                }
+                handleMessage(m, this.ipcSend);
+            });
 
             // Data transmission through STDERR from the child process, used when IPC is not available
             // Format of data is: PHANDLERA_TRANSMISSION<length><v8 serialized data>
@@ -525,17 +532,20 @@ export default class Plugin {
                                     dataBuffer.slice(magicHeader.length + 4, magicHeader.length + 4 + lastMessageLength)
                                 );
                                 let decoded = deserialize(msgpackData);
-                                handleMessage(decoded, (msg: any) => {
-                                    let encoded = serialize(msg);
-
-                                    let lengthBuffer = Buffer.alloc(4);
-                                    lengthBuffer.writeUInt32BE(encoded.length, 0);
-                                    let lengthBytes = Array.from(lengthBuffer);
-                                    
-                                    this.child?.stdin?.write(
-                                        Buffer.from([...magicHeader, ...lengthBytes, ...encoded, 0x00])
-                                    );
-                                });
+                                if (!this.ipcSend) {
+                                    this.ipcSend = (msg: any) => {
+                                        let encoded = serialize(msg);
+    
+                                        let lengthBuffer = Buffer.alloc(4);
+                                        lengthBuffer.writeUInt32BE(encoded.length, 0);
+                                        let lengthBytes = Array.from(lengthBuffer);
+                                        
+                                        this.child?.stdin?.write(
+                                            Buffer.from([...magicHeader, ...lengthBytes, ...encoded, 0x00])
+                                        );
+                                    };
+                                }
+                                handleMessage(decoded, this.ipcSend);
 
                                 // Reset buffer
                                 dataBuffer = [];
