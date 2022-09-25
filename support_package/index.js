@@ -10,7 +10,7 @@ let sendData = process?.send ?? ((data) => {
     let lenBytes = Buffer.alloc(4);
     lenBytes.writeUInt32BE(buf.length, 0);
 
-    process.stdout.write(Buffer.from([
+    process.stderr.write(Buffer.from([
         ...MAGIC_HEADER,
         ...lenBytes,
         ...buf
