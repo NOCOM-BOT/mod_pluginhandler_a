@@ -1,8 +1,24 @@
+import { serialize, deserialize } from "node:v8";
+
+const MAGIC_HEADER = "PHANDLERA_TRANSMISSION".split("").map((c) => c.charCodeAt(0));
+
 let apiCB = {};
 let functionRef = {};
 
+let sendData = process?.send ?? ((data) => {
+    let buf = serialize(data);
+    let lenBytes = Buffer.alloc(4);
+    lenBytes.writeUInt32BE(buf.length, 0);
+
+    process.stdout.write(Buffer.from([
+        ...MAGIC_HEADER,
+        ...lenBytes,
+        ...buf
+    ]));
+});
+
 export function verifyPlugin(allow) {
-    process.send({
+    sendData({
         op: "verifyPlugin",
         allow: allow
     });
@@ -11,7 +27,7 @@ export function verifyPlugin(allow) {
 export async function callFuncPlugin(namespace, funcName, ...args) {
     let nonce = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
-    process.send({
+    sendData({
         op: "callFuncPlugin",
         namespace,
         funcName,
@@ -44,7 +60,7 @@ export async function registerFuncPlugin(funcName, callback) {
 export async function callAPI(moduleID, cmd, value) {
     let nonce = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
-    process.send({
+    sendData({
         op: "callAPI",
         moduleID,
         cmd,
@@ -69,7 +85,7 @@ export async function registerCommand(commandName, commandInfo, commandCallback,
     let randomFuncNameCallback = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
     functionRef[randomFuncNameCallback] = commandCallback;
 
-    process.send({
+    sendData({
         op: "registerCommand",
         compatibility,
         funcName: randomFuncNameCallback,
@@ -90,7 +106,7 @@ export async function registerCommand(commandName, commandInfo, commandCallback,
 export async function registerCommandFuncPlugin(commandName, commandInfo, funcName, compatibility) {
     let nonce = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
-    process.send({
+    sendData({
         op: "registerCommand",
         compatibility,
         funcName,
@@ -109,7 +125,7 @@ export async function registerCommandFuncPlugin(commandName, commandInfo, funcNa
 }
 
 export function exit(exit_code, exit_reason) {
-    process.send({
+    sendData({
         op: "exit",
         exit_code,
         exit_reason
@@ -121,7 +137,7 @@ export function exit(exit_code, exit_reason) {
 export async function waitForModule(moduleNamespace, timeout) {
     let nonce = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
-    process.send({
+    sendData({
         op: "waitForModule",
         moduleNamespace,
         timeout
@@ -137,7 +153,7 @@ export async function waitForModule(moduleNamespace, timeout) {
 }
 
 function logger(level, ...args) {
-    process.send({
+    sendData({
         op: "log",
         level,
         args
@@ -148,7 +164,7 @@ export function database(databaseID) {
     function q(t, a1, a2, a3) {
         let nonce = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
-        process.send({
+        sendData({
             op: "database",
             t,
             a1,
@@ -181,7 +197,7 @@ export const log = {
     verbose: (...args) => logger("verbose", ...args)
 }
 
-process.on("message", async (msg) => {
+async function handleMessage(msg) {
     if (msg.op === "cb") {
         if (msg.error) {
             apiCB[msg.nonce]?.reject?.(msg.error);
@@ -196,24 +212,89 @@ process.on("message", async (msg) => {
             try {
                 let d = await func(...msg.args);
 
-                process.send({
+                sendData({
                     op: "cb",
                     nonce: msg.nonce,
                     data: d
                 });
             } catch (e) {
-                process.send({
+                sendData({
                     op: "cb",
                     nonce: msg.nonce,
                     error: e instanceof Error ? e.stack : String(e)
                 });
             }
         } else {
-            process.send({
+            sendData({
                 op: "cb",
                 nonce: msg.nonce,
                 error: `Function ${msg.funcName} not found`
             });
+        }
+    }
+};
+
+process.on("message", handleMessage);
+
+// Parse data from STDIN
+// Format of data is: PHANDLERA_TRANSMISSION<length><v8 serialized data>
+// PHANDLERA_TRANSMISSION is the magic header
+// Length is the length of the msgpack data, in 4 bytes unsigned big-endian integer
+//
+// Data could be fragmented (including header), so we need to store the data in a buffer
+let dataBuffer = [];
+let magicHeaderCorrect = 0;
+let lastMessageLength = -1;
+
+let isReading = false;
+process.stdin.on("data", (dataUnk) => {
+    if (this.child?.killed) return;
+
+    let data = Buffer.from(dataUnk);
+    // Iterate through the data and check for magic header
+
+    for (let i = 0; i < data.length; i++) {
+        if (isReading) {
+            // Dump data into buffer
+            dataBuffer.push(data[i]);
+
+            // Check if we have length bytes
+            if (dataBuffer.length >= MAGIC_HEADER.length + 4) {
+                // Read length, but only once
+                if (lastMessageLength === -1) {
+                    lastMessageLength = Buffer.from(
+                        dataBuffer.slice(MAGIC_HEADER.length, MAGIC_HEADER.length + 4)
+                    ).readUint32BE(0);
+                }
+
+                // Check if we have enough data
+                if (dataBuffer.length >= MAGIC_HEADER.length + 4 + lastMessageLength) {
+                    // We have enough data, decode it
+                    let msgpackData = Buffer.from(
+                        dataBuffer.slice(MAGIC_HEADER.length + 4, MAGIC_HEADER.length + 4 + lastMessageLength)
+                    );
+                    let decoded = deserialize(msgpackData);
+                    handleMessage(decoded);
+
+                    // Reset buffer
+                    dataBuffer = [];
+                    lastMessageLength = -1;
+                    isReading = false;
+                }
+            }
+        }
+
+        if (data[i] === MAGIC_HEADER[magicHeaderCorrect]) {
+            magicHeaderCorrect++;
+
+            if (magicHeaderCorrect === MAGIC_HEADER.length) {
+                // Add header to data buffer
+                dataBuffer.push(...MAGIC_HEADER);
+
+                isReading = true;
+            }
+        } else if (!isReading) {
+            magicHeaderCorrect = 0;
         }
     }
 });

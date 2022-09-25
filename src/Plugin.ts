@@ -1,12 +1,12 @@
 import { fork } from 'node:child_process';
 import type { ChildProcess } from "node:child_process";
 import fs from "node:fs/promises";
-import fsSync from "node:fs";
 import path from "node:path";
 import type CMComm from "./CMC.js";
 import type Logger from "./Logger.js";
 import { fileURLToPath, pathToFileURL } from 'url';
 import crypto from "node:crypto";
+import { serialize, deserialize } from "node:v8";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -100,11 +100,11 @@ export default class Plugin {
                 // Test package.json
                 JSON.parse(await fs.readFile(path.join(supportPackagePath, "package.json"), { encoding: "utf8" }));
                 break;
-            } catch { 
+            } catch {
                 loadAttempt++;
             }
         }
-        
+
         // Package download
         await this.cmc.callAPI("core", "pnpm_install", {
             path: this.path
@@ -113,12 +113,12 @@ export default class Plugin {
         if (pJSON.subclass === 0) {
             this.child = fork(path.join(this.path, pJSON.entryPoint), [], {
                 cwd: path.resolve(this.path),
-                silent: false
+                stdio: ["pipe", "inherit", "pipe", "ipc"]
             });
         } else if (pJSON.subclass === 1) {
             this.child = fork(TSNODE_BIN_LOCATION, [path.join(this.path, pJSON.entryPoint)], {
                 cwd: path.resolve(this.path),
-                silent: false
+                stdio: ["pipe", "inherit", "pipe", "ipc"]
             });
         }
 
@@ -186,7 +186,7 @@ export default class Plugin {
                 rej(new Error("Child process error"));
             });
 
-            this.child.on("message", async (message: any) => {
+            let handleMessage = async (message: any, send?: Function) => {
                 switch (message.op) {
                     case "verifyPlugin":
                         if (!message.allow) {
@@ -214,28 +214,28 @@ export default class Plugin {
                                 });
 
                                 if (req2.exist) {
-                                    this.child?.send({
+                                    send?.({
                                         op: "cb",
                                         nonce: message.nonce,
                                         data: req2.data.returnData,
                                         error: req2.data.error
                                     });
                                 } else {
-                                    this.child?.send({
+                                    send?.({
                                         op: "cb",
                                         nonce: message.nonce,
                                         error: "Module resolver failed"
                                     });
                                 }
                             } else {
-                                this.child?.send({
+                                send?.({
                                     op: "cb",
                                     nonce: message.nonce,
                                     error: "Namespace not found"
                                 });
                             }
                         } else {
-                            this.child?.send({
+                            send?.({
                                 op: "cb",
                                 nonce: message.nonce,
                                 error: "Incompatible core/kernel (???)"
@@ -246,14 +246,14 @@ export default class Plugin {
                     case "callAPI":
                         let req3 = await this.cmc.callAPI(message.moduleID, message.cmd, message.value);
                         if (req3.exist) {
-                            this.child?.send({
+                            send?.({
                                 op: "cb",
                                 nonce: message.nonce,
                                 error: req3.error,
                                 data: req3.data
                             });
                         } else {
-                            this.child?.send({
+                            send?.({
                                 op: "cb",
                                 nonce: message.nonce,
                                 error: "Function not found"
@@ -298,7 +298,7 @@ export default class Plugin {
                                     });
 
                                     if (req5.exist) {
-                                        this.child?.send({
+                                        send?.({
                                             op: "cb",
                                             nonce: message.nonce,
                                             error: req5.data?.error ?? req5.error,
@@ -315,13 +315,13 @@ export default class Plugin {
                                 }
                             }
 
-                            this.child?.send({
+                            send?.({
                                 op: "cb",
                                 nonce: message.nonce,
                                 error: "Command handler is not installed"
                             });
                         } else {
-                            this.child?.send({
+                            send?.({
                                 op: "cb",
                                 nonce: message.nonce,
                                 error: "Incompatible core/kernel (???)"
@@ -342,7 +342,7 @@ export default class Plugin {
                         });
 
                         if (req6.exist) {
-                            this.child?.send({
+                            send?.({
                                 op: "cb",
                                 nonce: message.nonce,
                                 error: req6.error,
@@ -351,7 +351,7 @@ export default class Plugin {
                                 }
                             });
                         } else {
-                            this.child?.send({
+                            send?.({
                                 op: "cb",
                                 nonce: message.nonce,
                                 data: {
@@ -376,7 +376,7 @@ export default class Plugin {
                             delete this.apiCBTable[message.nonce];
                         }
                         break;
-                    
+
                     case "database":
                         // Get database resolver for the corresponding database ID
                         let req7 = await this.cmc.callAPI("core", "get_db_resolver", {
@@ -394,13 +394,13 @@ export default class Plugin {
                                             key: message.a2
                                         });
                                         if (req8.exist) {
-                                            this.child?.send({
+                                            send?.({
                                                 op: "cb",
                                                 nonce: message.nonce,
                                                 data: req8.data
                                             });
                                         } else {
-                                            this.child?.send({
+                                            send?.({
                                                 op: "cb",
                                                 nonce: message.nonce,
                                                 error: "Database not found"
@@ -415,13 +415,13 @@ export default class Plugin {
                                             value: message.a3
                                         });
                                         if (req9.exist) {
-                                            this.child?.send({
+                                            send?.({
                                                 op: "cb",
                                                 nonce: message.nonce,
                                                 data: true
                                             });
                                         } else {
-                                            this.child?.send({
+                                            send?.({
                                                 op: "cb",
                                                 nonce: message.nonce,
                                                 data: false
@@ -435,13 +435,13 @@ export default class Plugin {
                                             key: message.a2
                                         });
                                         if (req10.exist) {
-                                            this.child?.send({
+                                            send?.({
                                                 op: "cb",
                                                 nonce: message.nonce,
                                                 data: true
                                             });
                                         } else {
-                                            this.child?.send({
+                                            send?.({
                                                 op: "cb",
                                                 nonce: message.nonce,
                                                 data: false
@@ -454,13 +454,13 @@ export default class Plugin {
                                             table: message.a1
                                         });
                                         if (req11.exist) {
-                                            this.child?.send({
+                                            send?.({
                                                 op: "cb",
                                                 nonce: message.nonce,
                                                 data: true
                                             });
                                         } else {
-                                            this.child?.send({
+                                            send?.({
                                                 op: "cb",
                                                 nonce: message.nonce,
                                                 data: false
@@ -469,19 +469,94 @@ export default class Plugin {
                                         break;
                                 }
                             } else {
-                                this.child?.send({
+                                send?.({
                                     op: "cb",
                                     nonce: message.nonce,
                                     error: req7.error
                                 });
                             }
                         } else {
-                            this.child?.send({
+                            send?.({
                                 op: "cb",
                                 nonce: message.nonce,
                                 error: "Incompatible core/kernel (???)"
                             });
                         }
+                }
+            };
+            this.child.on("message", m => handleMessage(m, this.child?.send));
+
+            // Data transmission through STDERR from the child process, used when IPC is not available
+            // Format of data is: PHANDLERA_TRANSMISSION<length><v8 serialized data>
+            // PHANDLERA_TRANSMISSION is the magic header
+            // Length is the length of the msgpack data, in 4 bytes unsigned big-endian integer
+            //
+            // Data could be fragmented (including header), so we need to store the data in a buffer
+            let dataBuffer: number[] = [];
+            let magicHeaderCorrect = 0;
+            let magicHeader = "PHANDLERA_TRANSMISSION".split("").map((c) => c.charCodeAt(0));
+            let lastMessageLength = -1;
+
+            let isReading = false;
+            this.child.stdio[2]?.on("data", (dataUnk) => {
+                if (this.child?.killed) return;
+
+                let data = Buffer.from(dataUnk);
+                // Iterate through the data and check for magic header
+
+                for (let i = 0; i < data.length; i++) {
+                    if (isReading) {
+                        // Dump data into buffer
+                        dataBuffer.push(data[i]);
+
+                        // Check if we have length bytes
+                        if (dataBuffer.length >= magicHeader.length + 4) {
+                            // Read length, but only once
+                            if (lastMessageLength === -1) {
+                                lastMessageLength = Buffer.from(
+                                    dataBuffer.slice(magicHeader.length, magicHeader.length + 4)
+                                ).readUint32BE(0);
+                            }
+
+                            // Check if we have enough data
+                            if (dataBuffer.length >= magicHeader.length + 4 + lastMessageLength) {
+                                // We have enough data, decode it
+                                let msgpackData = Buffer.from(
+                                    dataBuffer.slice(magicHeader.length + 4, magicHeader.length + 4 + lastMessageLength)
+                                );
+                                let decoded = deserialize(msgpackData);
+                                handleMessage(decoded, (msg: any) => {
+                                    let encoded = serialize(msg);
+
+                                    let lengthBuffer = Buffer.alloc(4);
+                                    lengthBuffer.writeUInt32BE(encoded.length, 0);
+                                    let lengthBytes = Array.from(lengthBuffer);
+                                    
+                                    this.child?.stdin?.write(
+                                        Buffer.from([...magicHeader, ...lengthBytes, ...encoded])
+                                    );
+                                });
+
+                                // Reset buffer
+                                dataBuffer = [];
+                                lastMessageLength = -1;
+                                isReading = false;
+                            }
+                        }
+                    }
+
+                    if (data[i] === magicHeader[magicHeaderCorrect]) {
+                        magicHeaderCorrect++;
+
+                        if (magicHeaderCorrect === magicHeader.length) {
+                            // Add header to data buffer
+                            dataBuffer.push(...magicHeader);
+
+                            isReading = true;
+                        }
+                    } else if (!isReading) {
+                        magicHeaderCorrect = 0;
+                    }
                 }
             });
 

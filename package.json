@@ -1,6 +1,6 @@
 {
   "name": "@nocom_bot/mod_pluginhandler_a",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "description": "Official A-Type plugin handler for NOCOM_BOT.",
   "main": "dist/index.js",
   "scripts": {
