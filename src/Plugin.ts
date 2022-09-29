@@ -1,4 +1,4 @@
-import { fork } from 'node:child_process';
+import { fork, spawn } from 'node:child_process';
 import type { ChildProcess } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -118,9 +118,9 @@ export default class Plugin {
                 stdio: ["pipe", "inherit", "pipe", "ipc"]
             });
         } else if (pJSON.subclass === 1) {
-            this.child = fork(TSNODE_BIN_LOCATION, [path.join(this.path, pJSON.entryPoint)], {
+            this.child = spawn(process.execPath, [TSNODE_BIN_LOCATION, path.join(this.path, pJSON.entryPoint)], {
                 cwd: path.resolve(this.path),
-                stdio: ["pipe", "inherit", "pipe", "ipc"]
+                stdio: ["pipe", "inherit", "pipe"]
             });
         }
 
