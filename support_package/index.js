@@ -69,15 +69,11 @@ export async function callAPI(moduleID, cmd, value) {
         nonce
     });
 
-    let rtData = await new Promise(resolve => {
-        apiCB[nonce] = resolve;
+    return await new Promise((resolve, reject) => {
+        apiCB[nonce] = {
+            resolve, reject
+        };
     });
-
-    if (rtData.error) {
-        throw rtData.error;
-    }
-
-    return rtData.data;
 }
 
 export async function registerCommand(commandName, commandInfo, commandCallback, compatibility) {
